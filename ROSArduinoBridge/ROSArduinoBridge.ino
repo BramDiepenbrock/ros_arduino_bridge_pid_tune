@@ -45,6 +45,15 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  *********************************************************************/
 
+/*********************************************************************
+ROSArduinoBridge + Heartbeat + Basic response plotting (3-1-2026)
+
+Added heartbeat functionality. The idea is that the kinematics 
+controller (arduino) sends a heartbeat every second, indicating it 
+is alive and operating under nomral conditions. It piggypacks on the
+PID.
+*********************************************************************/
+
 #define USE_BASE      // Enable the base controller code
 //#undef USE_BASE     // Disable the base controller code
 
@@ -114,9 +123,21 @@
   /* Track the next time we make a PID calculation */
   unsigned long nextPID = PID_INTERVAL;
 
+  /* Run the heartbeat 1 time per second */
+  #define HB_RATE            1     // Hz
+
+  /* Convert the rate into an interval */
+  const int HB_INTERVAL = 1000 / HB_RATE;
+
+  /* Track the next time we send a heartbeat */
+  unsigned long nextHB = HB_INTERVAL; 
+
+  /* Keep up the state of the heartbeat, if 1 something is wrong */
+  bool stateHB = false;
+
   /* Stop the robot if it hasn't received a movement command
    in this number of milliseconds */
-  #define AUTO_STOP_INTERVAL 2000
+  #define AUTO_STOP_INTERVAL 100000
   long lastMotorCommand = AUTO_STOP_INTERVAL;
 #endif
 
@@ -159,12 +180,20 @@ int runCommand() {
   int pid_args[4];
   arg1 = atoi(argv1);
   arg2 = atoi(argv2);
-  
+
+  // command feedback
+  // Serial.print(cmd);
+  // Serial.print(" Arg1: ");
+  // Serial.print(argv1);
+  // Serial.print(" Arg2: ");
+  // Serial.println(argv2);
+
   switch(cmd) {
   case GET_BAUDRATE:
     Serial.println(BAUDRATE);
     break;
   case ANALOG_READ:
+    Serial.println("I should display");
     Serial.println(analogRead(arg1));
     break;
   case DIGITAL_READ:
@@ -250,6 +279,7 @@ int runCommand() {
 /* Setup function--runs once at startup. */
 void setup() {
   Serial.begin(BAUDRATE);
+  Serial.println("Starting controller");
 
 // Initialize the motor controller if used */
 #ifdef USE_BASE
@@ -308,7 +338,6 @@ void setup() {
 */
 void loop() {
   while (Serial.available() > 0) {
-    
     // Read the next character
     chr = Serial.read();
 
@@ -358,6 +387,20 @@ void loop() {
   if ((millis() - lastMotorCommand) > AUTO_STOP_INTERVAL) {;
     setMotorSpeeds(0, 0);
     moving = 0;
+  }
+#endif
+
+// Heartbeat
+#ifdef USE_BASE
+  if(millis() > nextHB) {
+     
+    if (stateHB) {
+      Serial.println("HB NOT OK");
+    } else {
+      Serial.println("HB OK");
+    }
+
+    nextHB += HB_INTERVAL;
   }
 #endif
 

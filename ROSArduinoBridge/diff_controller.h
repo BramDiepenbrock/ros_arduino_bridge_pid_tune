@@ -33,12 +33,18 @@ SetPointInfo;
 SetPointInfo leftPID, rightPID;
 
 /* PID Parameters */
-int Kp = 20;
-int Kd = 12;
-int Ki = 0;
+int Kp = 10;
+int Kd = 5;
+int Ki = 1;
 int Ko = 50;
 
 unsigned char moving = 0; // is the base in motion?
+
+long lastLeftEncoder = 0;
+long lastRightEncoder = 0;
+
+/* Heart beat state */
+extern bool stateHB;
 
 /*
 * Initialize PID variables to zero to prevent startup spikes
@@ -74,7 +80,6 @@ void doPID(SetPointInfo * p) {
   input = p->Encoder - p->PrevEnc;
   Perror = p->TargetTicksPerFrame - input;
 
-
   /*
   * Avoid derivative kick and allow tuning changes,
   * see http://brettbeauregard.com/blog/2011/04/improving-the-beginner%E2%80%99s-pid-derivative-kick/
@@ -82,12 +87,14 @@ void doPID(SetPointInfo * p) {
   */
   //output = (Kp * Perror + Kd * (Perror - p->PrevErr) + Ki * p->Ierror) / Ko;
   // p->PrevErr = Perror;
+  //Serial.println("Kp: " + String(Kp) + " Kd: " + String(Kd) + " Ki: "+ String(Ki) + " Ko: " + String(Ko));
   output = (Kp * Perror - Kd * (input - p->PrevInput) + p->ITerm) / Ko;
   p->PrevEnc = p->Encoder;
 
   output += p->output;
   // Accumulate Integral error *or* Limit output.
-  // Stop accumulating when output saturates
+  // Stop accumulating when output saturates 
+  // see http://brettbeauregard.com/blog/2011/04/improving-the-beginners-pid-reset-windup/
   if (output >= MAX_PWM)
     output = MAX_PWM;
   else if (output <= -MAX_PWM)
@@ -107,6 +114,32 @@ void updatePID() {
   /* Read the encoders */
   leftPID.Encoder = (readEncoder(LEFT_REAR) + readEncoder(LEFT_FRONT))/2;
   rightPID.Encoder = (readEncoder(RIGHT_REAR) + readEncoder(RIGHT_FRONT))/2;
+
+  /* Print the wheel speed every second */
+  // Calculate the change in encoder counts
+  long leftEncoderChange = leftPID.Encoder - lastLeftEncoder;
+  long rightEncoderChange = rightPID.Encoder - lastRightEncoder;
+
+  // Note: can be used for tuning
+  //Serial.print("Left Wheel Speed: ");
+  // Serial.print(255); Serial.print("\t");
+  // Serial.print(leftEncoderChange);  // Change in encoder count
+  //Serial.print(" ticks/s, Right Wheel Speed: ");
+  // Serial.print("\t");
+  // Serial.println(rightEncoderChange);  // Change in encoder count
+
+  // Update the last encoder values and time
+  lastLeftEncoder = leftPID.Encoder;
+  lastRightEncoder = rightPID.Encoder;
+
+  /*
+  Heartbeat check. If the encoderpulses deviate more than 250 then something is amiss
+  */
+  if (abs(leftEncoderChange - leftPID.TargetTicksPerFrame) > 250 && abs(rightEncoderChange - rightPID.TargetTicksPerFrame) > 250) {
+    stateHB = true;
+  } else {
+    stateHB = false;
+  }
   
   /* If we're not moving there is nothing more to do */
   if (!moving){
